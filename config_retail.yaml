@@ -1,0 +1,54 @@
+# config_retail.yaml — Retail Sales example
+# Shows the framework works on any tabular dataset, not just lending data.
+#
+# Run: python3 run.py --config config_retail.yaml --algorithm isolation_forest
+
+data:
+  source: csv
+  path: data/retail_sales.csv
+  table: loans                  # framework always uses 'loans' as the internal table name
+
+algorithm:
+  name: isolation_forest        # better for non-normal retail distributions
+  threshold: 0.05               # 5% contamination
+  min_sample_size: 30           # lower threshold for smaller retail datasets
+  top_n: 10
+
+dimensions:
+
+  - name: regional
+    description: Revenue anomalies by region
+    columns:
+      - region
+    metric_sql: AVG(revenue)
+    metric_name: avg_revenue
+
+  - name: product_category
+    description: Return rate anomalies by category
+    columns:
+      - category
+      - subcategory
+    metric_sql: AVG(return_rate)
+    metric_name: avg_return_rate
+
+  - name: channel_performance
+    description: Conversion rate by sales channel
+    columns:
+      - channel
+    metric_sql: AVG(conversion_rate)
+    metric_name: avg_conversion_rate
+
+  - name: customer_segment
+    description: Average order value by customer tier
+    columns:
+      - customer_tier
+      - product_category
+    metric_sql: AVG(order_value)
+    metric_name: avg_order_value
+
+pipeline:
+  use_macro: false              # macro enrichment not relevant for retail
+  use_llm: false
+  use_eval: false
+  send_email: false
+  report_dir: reports

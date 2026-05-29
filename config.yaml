@@ -1,0 +1,110 @@
+# config.yaml — Portfolio RCA Intelligence System
+# Lending Club configuration (default)
+#
+# To use with a different dataset:
+#   1. Change data.source, data.path, data.table
+#   2. Update dimensions to match your column names
+#   3. Run: python3 run.py --config config.yaml
+
+# ---------------------------------------------------------------------------
+# Data source
+# ---------------------------------------------------------------------------
+data:
+  source: duckdb              # csv | duckdb | postgres
+  path: data/portfolio.db     # file path or postgres connection string
+  table: loans                # table name (duckdb/postgres only)
+  # sample_rows: 10000        # optional: limit rows for testing
+
+# ---------------------------------------------------------------------------
+# Algorithm
+# ---------------------------------------------------------------------------
+algorithm:
+  name: zscore                # zscore | iqr | isolation_forest | lof
+  threshold: 2.0              # z-score cutoff (zscore/iqr) or contamination % (if/lof)
+  min_sample_size: 100        # minimum group size to include in scan
+  top_n: 10                   # max anomalies to return per dimension
+
+# ---------------------------------------------------------------------------
+# Dimensions — define what to scan and how to measure it
+# Each dimension groups the data by `columns` and computes `metric_sql`
+# ---------------------------------------------------------------------------
+dimensions:
+
+  - name: regional
+    description: Geographic leverage risk
+    columns:
+      - addr_state
+    metric_sql: AVG(dti)
+    metric_name: avg_dti
+
+  - name: vintage_risk
+    description: Temporal delinquency by cohort and grade
+    columns:
+      - issue_d
+      - grade
+    metric_sql: >
+      SUM(CASE WHEN loan_status LIKE '%Late%'
+               OR loan_status = 'Default'
+               OR loan_status = 'Charged Off'
+          THEN 1 ELSE 0 END) * 1.0 / COUNT(*)
+    metric_name: delinquency_rate
+
+  - name: credit_quality
+    description: Credit quality drift by loan purpose
+    columns:
+      - purpose
+    metric_sql: >
+      AVG(
+        CASE grade
+          WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3
+          WHEN 'D' THEN 4 WHEN 'E' THEN 5 WHEN 'F' THEN 6
+          WHEN 'G' THEN 7 ELSE NULL END
+        + COALESCE(delinq_2yrs, 0) * 0.5
+        + COALESCE(pub_rec_bankruptcies, 0) * 2.0
+      )
+    metric_name: composite_risk_score
+
+  - name: yield_analysis
+    description: Yield capture anomalies by employment tenure
+    columns:
+      - emp_length
+    metric_sql: AVG(int_rate)
+    metric_name: avg_int_rate
+
+  - name: utilisation_stress
+    description: Credit utilisation stress by homeownership segment
+    columns:
+      - home_ownership
+      - grade
+    metric_sql: AVG(revol_util)
+    metric_name: avg_revol_util
+
+  - name: income_verification
+    description: Rate disparity across income verification tiers
+    columns:
+      - verification_status
+      - purpose
+    metric_sql: AVG(int_rate)
+    metric_name: avg_int_rate
+
+# ---------------------------------------------------------------------------
+# LLM settings
+# ---------------------------------------------------------------------------
+llm:
+  model: claude-sonnet-4-5               # narrative generation model
+  eval_model: claude-haiku-4-5-20251001  # quality gate model — cheaper, faster
+  max_tokens: 400                        # max tokens for narrative generation
+  eval_max_tokens: 200                   # max tokens for eval scoring
+  eval_threshold: 3.5                    # min avg score (1-5) to keep LLM narrative
+
+# ---------------------------------------------------------------------------
+# Pipeline settings
+# ---------------------------------------------------------------------------
+pipeline:
+  use_macro: true             # enrich with FRED macro data
+  use_llm: false              # LLM narratives (requires ANTHROPIC_API_KEY)
+  use_eval: false             # narrative quality gate (requires use_llm: true)
+  send_email: false           # email delivery (requires Gmail env vars)
+  report_dir: reports         # where to save JSON audit reports
+  z_threshold: 2.0            # anomaly detection threshold (overrides algorithm.threshold)
+  co_move_threshold: 1.5      # co-movement significance threshold
